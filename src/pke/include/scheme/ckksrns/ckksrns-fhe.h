@@ -97,6 +97,9 @@ public:
     Ciphertext<DCRTPoly> m_precompExp;
     Ciphertext<DCRTPoly> m_precompExpI;
 
+    // flag indicating whether we perform StC before ModRaise
+    bool BTSlotsEncoding;
+
     template <class Archive>
     void save(Archive& ar) const {
         ar(cereal::make_nvp("dim1_Enc", m_paramsEnc.g));
@@ -104,6 +107,7 @@ public:
         ar(cereal::make_nvp("slots", m_slots));
         ar(cereal::make_nvp("lEnc", m_paramsEnc.lvlb));
         ar(cereal::make_nvp("lDec", m_paramsDec.lvlb));
+        ar(cereal::make_nvp("BTSlotsEncoding", BTSlotsEncoding));
     }
 
     template <class Archive>
@@ -113,6 +117,7 @@ public:
         ar(cereal::make_nvp("slots", m_slots));
         ar(cereal::make_nvp("lEnc", m_paramsEnc.lvlb));
         ar(cereal::make_nvp("lDec", m_paramsDec.lvlb));
+        ar(cereal::make_nvp("BTSlotsEncoding", BTSlotsEncoding));
     }
 };
 
@@ -139,8 +144,8 @@ public:
     //------------------------------------------------------------------------------
 
     void EvalBootstrapSetup(const CryptoContextImpl<DCRTPoly>& cc, std::vector<uint32_t> levelBudget,
-                            std::vector<uint32_t> dim1, uint32_t slots, uint32_t correctionFactor,
-                            bool precompute) override;
+                            std::vector<uint32_t> dim1, uint32_t slots, uint32_t correctionFactor, bool precompute,
+                            bool BTSlotsEncoding) override;
 
     std::shared_ptr<std::map<uint32_t, EvalKey<DCRTPoly>>> EvalBootstrapKeyGen(const PrivateKey<DCRTPoly> privateKey,
                                                                                uint32_t slots) override;
@@ -149,6 +154,9 @@ public:
 
     Ciphertext<DCRTPoly> EvalBootstrap(ConstCiphertext<DCRTPoly>& ciphertext, uint32_t numIterations,
                                        uint32_t precision) const override;
+
+    Ciphertext<DCRTPoly> EvalBootstrapStCFirst(ConstCiphertext<DCRTPoly>& ciphertext, uint32_t numIterations,
+                                               uint32_t precision) const override;
 
     void EvalFBTSetup(const CryptoContextImpl<DCRTPoly>& cc, const std::vector<std::complex<double>>& coefficients,
                       uint32_t numSlots, const BigInteger& PIn, const BigInteger& POut, const BigInteger& Bigq,
@@ -229,13 +237,15 @@ public:
                                                                             const std::vector<std::complex<double>>& A,
                                                                             const std::vector<uint32_t>& rotGroup,
                                                                             bool flag_i, double scale = 1,
-                                                                            uint32_t L = 0) const;
+                                                                            uint32_t L          = 0,
+                                                                            bool flagStCComplex = false) const;
 
     std::vector<std::vector<ReadOnlyPlaintext>> EvalSlotsToCoeffsPrecompute(const CryptoContextImpl<DCRTPoly>& cc,
                                                                             const std::vector<std::complex<double>>& A,
                                                                             const std::vector<uint32_t>& rotGroup,
                                                                             bool flag_i, double scale = 1,
-                                                                            uint32_t L = 0) const;
+                                                                            uint32_t L          = 0,
+                                                                            bool flagStCComplex = false) const;
 
     //------------------------------------------------------------------------------
     // EVALUATION: CoeffsToSlots and SlotsToCoeffs
@@ -294,6 +304,14 @@ public:
         return "FHECKKSRNS";
     }
 
+    uint32_t GetCKKSBootCorrectionFactor() const override {
+        return m_correctionFactor;
+    }
+
+    void SetCKKSBootCorrectionFactor(uint32_t cf) override {
+        m_correctionFactor = cf;
+    }
+
 private:
     CKKSBootstrapPrecom& GetBootPrecom(uint32_t slots) const {
         auto pair = m_bootPrecomMap.find(slots);
@@ -321,7 +339,7 @@ private:
                                        const CryptoContextImpl<DCRTPoly>& cc);
     static uint32_t GetModDepthInternal(SecretKeyDist secretKeyDist);
 
-    void AdjustCiphertext(Ciphertext<DCRTPoly>& ciphertext, double correction) const;
+    void AdjustCiphertext(Ciphertext<DCRTPoly>& ciphertext, double correction, uint32_t lvl, bool modReduce = true) const;
     void AdjustCiphertextFBT(Ciphertext<DCRTPoly>& ciphertext, double correction) const;
 
     void ExtendCiphertext(std::vector<DCRTPoly>& ciphertext, const CryptoContextImpl<DCRTPoly>& cc,
